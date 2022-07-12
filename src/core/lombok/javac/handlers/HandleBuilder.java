@@ -21,6 +21,11 @@
  */
 package lombok.javac.handlers;
 
+import static lombok.core.handlers.HandlerUtil.*;
+import static lombok.javac.Javac.*;
+import static lombok.javac.JavacTreeMaker.TypeTag.typeTag;
+import static lombok.javac.handlers.JavacHandlerUtil.*;
+
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 
@@ -53,7 +58,9 @@ import com.sun.tools.javac.util.Name;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Builder.ObtainVia;
+import lombok.Coded;
 import lombok.ConfigurationKeys;
+import lombok.EnumValue;
 import lombok.Singular;
 import lombok.core.AST.Kind;
 import lombok.core.AnnotationValues;
@@ -65,12 +72,10 @@ import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
 import lombok.javac.JavacTreeMaker;
 import lombok.javac.handlers.HandleConstructor.SkipIfConstructorExists;
+import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
+import lombok.javac.handlers.JavacHandlerUtil.MemberExistsResult;
 import lombok.javac.handlers.JavacSingularsRecipes.JavacSingularizer;
 import lombok.javac.handlers.JavacSingularsRecipes.SingularData;
-import static lombok.core.handlers.HandlerUtil.*;
-import static lombok.javac.handlers.JavacHandlerUtil.*;
-import static lombok.javac.Javac.*;
-import static lombok.javac.JavacTreeMaker.TypeTag.*;
 
 @ProviderFor(JavacAnnotationHandler.class)
 @HandlerPriority(-1024) //-2^10; to ensure we've picked up @FieldDefault's changes (-2048) but @Value hasn't removed itself yet (-512), so that we can error on presence of it on the builder classes.
@@ -404,7 +409,7 @@ public class HandleBuilder extends JavacAnnotationHandler<Builder> {
 			for (BuilderFieldData bfd : builderFields) {
 				fieldNodes.addAll(bfd.createdFields);
 			}
-			JCMethodDecl md = HandleToString.createToString(builderType, fieldNodes, true, false, FieldAccess.ALWAYS_FIELD, ast);
+			JCMethodDecl md = HandleToString.createToString(builderType, fieldNodes, true, false, FieldAccess.GETTER, ast);
 			if (md != null) injectMethod(builderType, md);
 		}
 		
@@ -654,13 +659,13 @@ public class HandleBuilder extends JavacAnnotationHandler<Builder> {
 	public void makeSetterMethodsForBuilder(JavacNode builderType, BuilderFieldData fieldNode, JavacNode source, boolean fluent, boolean chain) {
 		boolean deprecate = isFieldDeprecated(fieldNode.originalFieldNode);
 		if (fieldNode.singularData == null || fieldNode.singularData.getSingularizer() == null) {
-			makeSimpleSetterMethodForBuilder(builderType, deprecate, fieldNode.createdFields.get(0), fieldNode.nameOfSetFlag, source, fluent, chain);
+			makeSimpleSetterMethodForBuilder(fieldNode, builderType, deprecate, fieldNode.createdFields.get(0), fieldNode.nameOfSetFlag, source, fluent, chain);
 		} else {
 			fieldNode.singularData.getSingularizer().generateMethods(fieldNode.singularData, deprecate, builderType, source.get(), fluent, chain);
 		}
 	}
 	
-	private void makeSimpleSetterMethodForBuilder(JavacNode builderType, boolean deprecate, JavacNode fieldNode, Name nameOfSetFlag, JavacNode source, boolean fluent, boolean chain) {
+	private void makeSimpleSetterMethodForBuilder(BuilderFieldData fieldData, JavacNode builderType, boolean deprecate, JavacNode fieldNode, Name nameOfSetFlag, JavacNode source, boolean fluent, boolean chain) {
 		Name fieldName = ((JCVariableDecl) fieldNode.get()).name;
 		
 		for (JavacNode child : builderType.down()) {
@@ -677,6 +682,30 @@ public class HandleBuilder extends JavacAnnotationHandler<Builder> {
 		JCMethodDecl newMethod = HandleSetter.createSetter(Flags.PUBLIC, deprecate, fieldNode, maker, setterName, nameOfSetFlag, chain, source, List.<JCAnnotation>nil(), List.<JCAnnotation>nil());
 		
 		injectMethod(builderType, newMethod);
+
+		JavacNode originalFieldNode = fieldData.originalFieldNode;
+		if(hasAnnotation(Coded.class, originalFieldNode)) {
+            JCMethodDecl encodeSetter = HandleCode.createEncodeSetter(Flags.PUBLIC, deprecate, fieldNode, maker,
+                    setterName, nameOfSetFlag, chain, source);
+            injectMethod(builderType, encodeSetter);
+
+            JCMethodDecl encodeGetter = HandleCode.createDecodeGetter(Flags.PRIVATE, deprecate, fieldNode, maker,
+                    source.get());
+            injectMethod(builderType, encodeGetter);
+		}
+
+		if(hasAnnotation(EnumValue.class, originalFieldNode)) {
+            JavacNode annotation = findAnnotation(EnumValue.class, originalFieldNode, false);
+            String enumClassName = HandleEnumValue.getEnumClassName(annotation);
+
+            JCMethodDecl enumSetter = HandleEnumValue.createEnumSetter(Flags.PUBLIC, deprecate, fieldNode, maker,
+                    setterName, chain, source, enumClassName);
+            injectMethod(builderType, enumSetter);
+
+            JCMethodDecl enumGetter = HandleEnumValue.createEnumGetter(Flags.PRIVATE, deprecate, fieldNode, maker,
+                    source.get(), enumClassName);
+            injectMethod(builderType, enumGetter);
+		}
 	}
 	
 	public JavacNode findInnerClass(JavacNode parent, String name) {

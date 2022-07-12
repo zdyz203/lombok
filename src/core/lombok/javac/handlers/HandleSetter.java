@@ -21,22 +21,13 @@
  */
 package lombok.javac.handlers;
 
-import static lombok.javac.Javac.*;
 import static lombok.core.handlers.HandlerUtil.*;
+import static lombok.javac.Javac.*;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
+import static lombok.javac.handlers.JavacHandlerUtil.toAllSetterNames;
+import static lombok.javac.handlers.JavacHandlerUtil.toSetterName;
 
 import java.util.Collection;
-
-import lombok.AccessLevel;
-import lombok.ConfigurationKeys;
-import lombok.Setter;
-import lombok.core.AST.Kind;
-import lombok.core.AnnotationValues;
-import lombok.javac.Javac;
-import lombok.javac.JavacAnnotationHandler;
-import lombok.javac.JavacNode;
-import lombok.javac.JavacTreeMaker;
-import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 
 import org.mangosdk.spi.ProviderFor;
 
@@ -56,6 +47,20 @@ import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
+
+import lombok.AccessLevel;
+import lombok.Coded;
+import lombok.ConfigurationKeys;
+import lombok.EnumValue;
+import lombok.Setter;
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.javac.Javac;
+import lombok.javac.JavacAnnotationHandler;
+import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
+import lombok.javac.handlers.JavacHandlerUtil.CopyJavadoc;
+import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 
 /**
  * Handles the {@code lombok.Setter} annotation for javac.
@@ -110,7 +115,9 @@ public class HandleSetter extends JavacAnnotationHandler<Setter> {
 	 * @param pos The node responsible for generating the setter (the {@code @Data} or {@code @Setter} annotation).
 	 */
 	public void generateSetterForField(JavacNode fieldNode, JavacNode sourceNode, AccessLevel level) {
-		if (hasAnnotation(Setter.class, fieldNode)) {
+		if (hasAnnotation(Setter.class, fieldNode)
+			|| hasAnnotation(Coded.class, fieldNode)
+			|| hasAnnotation(EnumValue.class, fieldNode)) {
 			//The annotation will make it happen, so we can skip it.
 			return;
 		}

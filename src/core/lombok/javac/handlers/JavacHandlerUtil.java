@@ -39,33 +39,15 @@ import java.util.regex.Pattern;
 
 import javax.lang.model.element.Element;
 
-import lombok.AccessLevel;
-import lombok.ConfigurationKeys;
-import lombok.Data;
-import lombok.Getter;
-import lombok.core.AST.Kind;
-import lombok.core.AnnotationValues;
-import lombok.core.LombokImmutableList;
-import lombok.core.AnnotationValues.AnnotationValue;
-import lombok.core.TypeResolver;
-import lombok.core.configuration.NullCheckExceptionType;
-import lombok.core.handlers.HandlerUtil;
-import lombok.delombok.LombokOptionsFactory;
-import lombok.experimental.Accessors;
-import lombok.experimental.Tolerate;
-import lombok.javac.Javac;
-import lombok.javac.JavacNode;
-import lombok.javac.JavacTreeMaker;
-
 import com.sun.tools.javac.code.BoundKind;
 import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Scope;
 import com.sun.tools.javac.code.Symbol;
-import com.sun.tools.javac.code.Symtab;
-import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
+import com.sun.tools.javac.code.Symtab;
+import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.MethodType;
 import com.sun.tools.javac.parser.Tokens.Comment;
 import com.sun.tools.javac.tree.DocCommentTable;
@@ -100,6 +82,25 @@ import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
 import com.sun.tools.javac.util.Options;
+
+import lombok.AccessLevel;
+import lombok.ConfigurationKeys;
+import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.core.AnnotationValues.AnnotationValue;
+import lombok.core.LombokImmutableList;
+import lombok.core.TypeResolver;
+import lombok.core.configuration.NullCheckExceptionType;
+import lombok.core.handlers.HandlerUtil;
+import lombok.delombok.LombokOptionsFactory;
+import lombok.experimental.Accessors;
+import lombok.experimental.Tolerate;
+import lombok.javac.Javac;
+import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
 
 /**
  * Container for static utility methods useful to handlers written for javac.
@@ -267,6 +268,18 @@ public class JavacHandlerUtil {
 		return false;
 	}
 	
+	private static Object tryCalculateGuess(JCExpression expr, JavacNode node) {
+		if (expr instanceof JCTree.JCAnnotation) {
+			try {
+				Class<? extends Annotation> aClass = (Class<? extends Annotation>) Class.forName(expr.type.toString());
+				return JavacHandlerUtil.doCreateAnnotation(aClass, node, (JCTree.JCAnnotation)expr).getInstance();
+			} catch (ClassNotFoundException e) {
+				node.addError(e.getMessage());
+				return null;
+			}
+		}
+		return calculateGuess(expr);
+	}
 	/**
 	 * Creates an instance of {@code AnnotationValues} for the provided AST Node.
 	 * 
@@ -274,8 +287,12 @@ public class JavacHandlerUtil {
 	 * @param node A Lombok AST node representing an annotation in source code.
 	 */
 	public static <A extends Annotation> AnnotationValues<A> createAnnotation(Class<A> type, final JavacNode node) {
-		Map<String, AnnotationValue> values = new HashMap<String, AnnotationValue>();
 		JCAnnotation anno = (JCAnnotation) node.get();
+		return doCreateAnnotation(type, node, anno);
+	}
+
+	private static <A extends Annotation> AnnotationValues<A> doCreateAnnotation(Class<A> type, final JavacNode node, JCAnnotation anno) {
+		Map<String, AnnotationValue> values = new HashMap<String, AnnotationValue>();
 		List<JCExpression> arguments = anno.getArguments();
 		
 		for (JCExpression arg : arguments) {
@@ -300,13 +317,13 @@ public class JavacHandlerUtil {
 				for (JCExpression inner : elems) {
 					raws.add(inner.toString());
 					expressions.add(inner);
-					guesses.add(calculateGuess(inner));
+					guesses.add(tryCalculateGuess(inner, node));
 					positions.add(inner.pos());
 				}
 			} else {
 				raws.add(rhs.toString());
 				expressions.add(rhs);
-				guesses.add(calculateGuess(rhs));
+				guesses.add(tryCalculateGuess(rhs, node));
 				positions.add(rhs.pos());
 			}
 			
@@ -362,6 +379,10 @@ public class JavacHandlerUtil {
 	}
 	
 	private static void deleteAnnotationIfNeccessary0(JavacNode annotation, Class<? extends Annotation>... annotationTypes) {
+		doDeleteAnnotation(annotation, annotationTypes);
+	}
+
+	public static void doDeleteAnnotation(JavacNode annotation, Class<? extends Annotation>... annotationTypes) {
 		if (inNetbeansEditor(annotation)) return;
 		if (!annotation.shouldDeleteLombokAnnotations()) return;
 		JavacNode parentNode = annotation.directUp();
@@ -1691,5 +1712,74 @@ public class JavacHandlerUtil {
 			docComments.put(to, filtered[0]);
 			docComments.put(from.get(), filtered[1]);
 		}
+	}
+
+	public static AccessLevel getAccessLevelFromSetter(AccessLevel level, JavacNode javacNode) {
+		JavacNode annotation = findAnnotation(Setter.class, javacNode, false);
+		if (annotation != null) {
+			Setter setter = createAnnotation(Setter.class, annotation).getInstance();
+			return setter.value();
+		} else {
+			return level;
+		}
+	}
+
+	public static AccessLevel getAccessLevelFromGetter(AccessLevel level, JavacNode javacNode) {
+		JavacNode annotation = findAnnotation(Getter.class, javacNode, false);
+		if (annotation != null) {
+			Getter getter = createAnnotation(Getter.class, annotation).getInstance();
+			return getter.value();
+		} else {
+			return level;
+		}
+	}
+
+	public static void addImport(JavacNode typeNode, String packageName, String className) {
+		typeNode = typeNode.top();
+		JCTree.JCCompilationUnit unit = (JCTree.JCCompilationUnit)typeNode.get();
+		for (JCTree def : unit.defs) {
+			if (def instanceof JCTree.JCImport) {
+				JCTree.JCImport imp0rt = (JCTree.JCImport)def;
+				if (!imp0rt.staticImport
+						&& imp0rt.qualid.toString().equals(packageName + "." + className)) {
+					return;
+				}
+			}
+		}
+		JavacTreeMaker maker = typeNode.getTreeMaker();
+		JCTree.JCIdent packAge = maker.Ident(typeNode.toName(packageName));
+		JCTree.JCFieldAccess codeUtil = maker.Select(packAge, typeNode.toName(className));
+		unit.defs = unit.defs.append(maker.Import(codeUtil, false));
+	}
+
+	public static boolean isSubClassOf(Type type, Class<?> clazz) {
+		if(type.tsym == null) {
+			return false;
+		}
+		if(!(type.tsym.type instanceof Type.ClassType)) {
+			return false;
+		}
+		if(type.tsym.toString().equalsIgnoreCase(clazz.getName())) {
+			return true;
+		}
+		Type.ClassType classType = (Type.ClassType) type.tsym.type;
+		if(classType.supertype_field != null){
+			if(isSubClassOf(classType.supertype_field, clazz)) {
+				return true;
+			}
+		}
+
+		if(classType.interfaces_field != null){
+			for (Type interfaceType : classType.interfaces_field) {
+				if(isSubClassOf(interfaceType, clazz)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	public static JCExpression longLiteral(JavacTreeMaker maker, long value){
+		return maker.Literal(Javac.CTC_LONG, value);
 	}
 }

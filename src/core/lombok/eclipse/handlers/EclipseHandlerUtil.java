@@ -995,6 +995,10 @@ public class EclipseHandlerUtil {
 		return HandlerUtil.toGetterName(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean);
 	}
 	
+	public static String toCodedGetterName(EclipseNode field, boolean isBoolean) {
+		return HandlerUtil.toGetterName(field.getAst(), getAccessorsForField(field), field.getName(), isBoolean);
+	}
+	
 	/**
 	 * Translates the given field into all possible setter names.
 	 * Convenient wrapper around {@link TransformationsUtil#toAllSetterNames(lombok.core.AnnotationValues, CharSequence, boolean)}.

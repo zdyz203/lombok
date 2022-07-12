@@ -23,25 +23,15 @@ package lombok.javac.handlers;
 
 import static lombok.core.handlers.HandlerUtil.*;
 import static lombok.javac.Javac.*;
-import static lombok.javac.JavacTreeMaker.TypeTag.*;
+import static lombok.javac.JavacTreeMaker.TypeTag.typeTag;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
+import static lombok.javac.handlers.JavacHandlerUtil.toAllGetterNames;
+import static lombok.javac.handlers.JavacHandlerUtil.toGetterName;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-
-import lombok.AccessLevel;
-import lombok.ConfigurationKeys;
-import lombok.experimental.Delegate;
-import lombok.Getter;
-import lombok.core.AST.Kind;
-import lombok.core.AnnotationValues;
-import lombok.javac.JavacAnnotationHandler;
-import lombok.javac.JavacNode;
-import lombok.javac.JavacTreeMaker;
-import lombok.javac.JavacTreeMaker.TypeTag;
-import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 
 import org.mangosdk.spi.ProviderFor;
 
@@ -66,6 +56,21 @@ import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
+
+import lombok.AccessLevel;
+import lombok.Coded;
+import lombok.ConfigurationKeys;
+import lombok.EnumValue;
+import lombok.Getter;
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.experimental.Delegate;
+import lombok.javac.JavacAnnotationHandler;
+import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
+import lombok.javac.JavacTreeMaker.TypeTag;
+import lombok.javac.handlers.JavacHandlerUtil.CopyJavadoc;
+import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 
 /**
  * Handles the {@code lombok.Getter} annotation for javac.
@@ -121,7 +126,9 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 	 * @param pos The node responsible for generating the getter (the {@code @Data} or {@code @Getter} annotation).
 	 */
 	public void generateGetterForField(JavacNode fieldNode, DiagnosticPosition pos, AccessLevel level, boolean lazy) {
-		if (hasAnnotation(Getter.class, fieldNode)) {
+		if (hasAnnotation(Getter.class, fieldNode)
+			|| hasAnnotation(Coded.class, fieldNode)
+			|| hasAnnotation(EnumValue.class, fieldNode)) {
 			//The annotation will make it happen, so we can skip it.
 			return;
 		}

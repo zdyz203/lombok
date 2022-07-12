@@ -96,6 +96,27 @@ public class HandleSetter extends EclipseAnnotationHandler<Setter> {
 		return true;
 	}
 	
+	public boolean generateEncodeSetterForType(EclipseNode typeNode, EclipseNode pos, AccessLevel level, boolean checkForTypeLevelSetter) {
+		
+		TypeDeclaration typeDecl = null;
+		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
+		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
+		boolean notAClass = (modifiers &
+				(ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation | ClassFileConstants.AccEnum)) != 0;
+		
+		for (EclipseNode field : typeNode.down()) {
+			if (field.getKind() != Kind.FIELD) continue;
+			FieldDeclaration fieldDecl = (FieldDeclaration) field.get();
+			if (!filterField(fieldDecl)) continue;
+			
+			//Skip final fields.
+			if ((fieldDecl.modifiers & ClassFileConstants.AccFinal) != 0) continue;
+			
+			generateSetterForField(field, pos, level);
+		}
+		return true;
+	}
+	
 	/**
 	 * Generates a setter on the stated field.
 	 * 

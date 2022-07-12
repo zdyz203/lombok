@@ -105,6 +105,20 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 		return true;
 	}
 	
+	public boolean generateDecodeGetterForType(EclipseNode typeNode, EclipseNode pos, AccessLevel level, boolean checkForTypeLevelGetter) {
+		
+		TypeDeclaration typeDecl = null;
+		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
+		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
+		boolean notAClass = (modifiers &
+				(ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation)) != 0;
+		
+		for (EclipseNode field : typeNode.down()) {
+			generateDecodeGetterForField(field, pos.get(), level, false);
+		}
+		return true;
+	}
+	
 	public boolean fieldQualifiesForGetterGeneration(EclipseNode field) {
 		if (field.getKind() != Kind.FIELD) return false;
 		FieldDeclaration fieldDecl = (FieldDeclaration) field.get();
@@ -130,6 +144,10 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 		}
 		
 		createGetterForField(level, fieldNode, fieldNode, pos, false, lazy, Collections.<Annotation>emptyList());
+	}
+	
+	public void generateDecodeGetterForField(EclipseNode fieldNode, ASTNode pos, AccessLevel level, boolean lazy) {
+		createDecodeGetterForField(level, fieldNode, fieldNode, pos, false, lazy, Collections.<Annotation>emptyList());
 	}
 	
 	public void handle(AnnotationValues<Getter> annotation, Annotation ast, EclipseNode annotationNode) {
@@ -226,6 +244,61 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 		
 		injectMethod(fieldNode.up(), method);
 	}
+	
+	public void createDecodeGetterForField(AccessLevel level,
+		EclipseNode fieldNode, EclipseNode errorNode, ASTNode source, boolean whineIfExists, boolean lazy, List<Annotation> onMethod) {
+	
+	FieldDeclaration field = (FieldDeclaration) fieldNode.get();
+	if (lazy) {
+		if ((field.modifiers & ClassFileConstants.AccPrivate) == 0 || (field.modifiers & ClassFileConstants.AccFinal) == 0) {
+			errorNode.addError("'lazy' requires the field to be private and final.");
+			return;
+		}
+		if ((field.modifiers & ClassFileConstants.AccTransient) != 0) {
+			errorNode.addError("'lazy' is not supported on transient fields.");
+			return;
+		}
+		if (field.initialization == null) {
+			errorNode.addError("'lazy' requires field initialization.");
+			return;
+		}
+	}
+	
+	TypeReference fieldType = copyType(field.type, source);
+	boolean isBoolean = isBoolean(fieldType);
+	String getterName = toGetterName(fieldNode, isBoolean);
+	
+	if (getterName == null) {
+		errorNode.addWarning("Not generating getter for this field: It does not fit your @Accessors prefix list.");
+		return;
+	}
+	
+	getterName = getterName + "ForDecode";
+	
+	int modifier = toEclipseModifier(level) | (field.modifiers & ClassFileConstants.AccStatic);
+	
+	for (String altName : toAllGetterNames(fieldNode, isBoolean)) {
+		switch (methodExists(altName, fieldNode, false, 0)) {
+		case EXISTS_BY_LOMBOK:
+			return;
+		case EXISTS_BY_USER:
+			if (whineIfExists) {
+				String altNameExpl = "";
+				if (!altName.equals(getterName)) altNameExpl = String.format(" (%s)", altName);
+				errorNode.addWarning(
+					String.format("Not generating %s(): A method with that name already exists%s", getterName, altNameExpl));
+			}
+			return;
+		default:
+		case NOT_EXISTS:
+			//continue scanning the other alt names.
+		}
+	}
+	
+	MethodDeclaration method = createGetter((TypeDeclaration) fieldNode.up().get(), fieldNode, getterName, modifier, source, lazy, onMethod);
+	
+	injectMethod(fieldNode.up(), method);
+}
 	
 	public static Annotation[] findDelegatesAndMarkAsHandled(EclipseNode fieldNode) {
 		List<Annotation> delegates = new ArrayList<Annotation>();

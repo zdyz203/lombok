@@ -293,9 +293,14 @@ public class AnnotationValues<A extends Annotation> {
 			if (guess instanceof String) try {
 				return Class.forName(toFQ((String)guess));
 			} catch (ClassNotFoundException e) {
-				throw new AnnotationValueDecodeFail(v,
-						"Can't translate " + guess + " to a class object.", pos);
+				return new Object();
+//				throw new AnnotationValueDecodeFail(v,
+//						"Can't translate " + guess + " to a class object.", pos);
 			}
+		}
+
+		if(expected.isAnnotation()){
+			return guess;
 		}
 		
 		throw new AnnotationValueDecodeFail(v,
