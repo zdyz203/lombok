@@ -24,21 +24,14 @@ package lombok.eclipse.handlers;
 import static lombok.core.handlers.HandlerUtil.*;
 import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
+import static lombok.eclipse.handlers.EclipseHandlerUtil.toAllSetterNames;
+import static lombok.eclipse.handlers.EclipseHandlerUtil.toSetterName;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-
-import lombok.AccessLevel;
-import lombok.ConfigurationKeys;
-import lombok.Setter;
-import lombok.core.AST.Kind;
-import lombok.core.AnnotationValues;
-import lombok.eclipse.EclipseAnnotationHandler;
-import lombok.eclipse.EclipseNode;
-import lombok.eclipse.handlers.EclipseHandlerUtil.FieldAccess;
 
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
@@ -59,6 +52,16 @@ import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.lookup.TypeIds;
 import org.mangosdk.spi.ProviderFor;
 
+import lombok.AccessLevel;
+import lombok.Coded;
+import lombok.ConfigurationKeys;
+import lombok.Setter;
+import lombok.core.AST.Kind;
+import lombok.core.AnnotationValues;
+import lombok.eclipse.EclipseAnnotationHandler;
+import lombok.eclipse.EclipseNode;
+import lombok.eclipse.handlers.EclipseHandlerUtil.FieldAccess;
+
 /**
  * Handles the {@code lombok.Setter} annotation for eclipse.
  */
@@ -66,7 +69,7 @@ import org.mangosdk.spi.ProviderFor;
 public class HandleSetter extends EclipseAnnotationHandler<Setter> {
 	public boolean generateSetterForType(EclipseNode typeNode, EclipseNode pos, AccessLevel level, boolean checkForTypeLevelSetter) {
 		if (checkForTypeLevelSetter) {
-			if (hasAnnotation(Setter.class, typeNode)) {
+			if (hasAnnotation(Setter.class, typeNode) || hasAnnotation(Coded.class, typeNode)) {
 				//The annotation will make it happen, so we can skip it.
 				return true;
 			}
@@ -82,27 +85,6 @@ public class HandleSetter extends EclipseAnnotationHandler<Setter> {
 			pos.addError("@Setter is only supported on a class or a field.");
 			return false;
 		}
-		
-		for (EclipseNode field : typeNode.down()) {
-			if (field.getKind() != Kind.FIELD) continue;
-			FieldDeclaration fieldDecl = (FieldDeclaration) field.get();
-			if (!filterField(fieldDecl)) continue;
-			
-			//Skip final fields.
-			if ((fieldDecl.modifiers & ClassFileConstants.AccFinal) != 0) continue;
-			
-			generateSetterForField(field, pos, level);
-		}
-		return true;
-	}
-	
-	public boolean generateEncodeSetterForType(EclipseNode typeNode, EclipseNode pos, AccessLevel level, boolean checkForTypeLevelSetter) {
-		
-		TypeDeclaration typeDecl = null;
-		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
-		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
-		boolean notAClass = (modifiers &
-				(ClassFileConstants.AccInterface | ClassFileConstants.AccAnnotation | ClassFileConstants.AccEnum)) != 0;
 		
 		for (EclipseNode field : typeNode.down()) {
 			if (field.getKind() != Kind.FIELD) continue;
